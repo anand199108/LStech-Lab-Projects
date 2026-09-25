@@ -1,0 +1,522 @@
+#include <Wire.h>
+#include <EEPROM.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_AHTX0.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+
+#define BUTTON_PIN 4
+#define LED_PWM_PIN 5
+#define BUZZER_PIN 6
+#define FAN_PWM_PIN 9
+
+Adafruit_SSD1306 display(
+  SCREEN_WIDTH,
+  SCREEN_HEIGHT,
+  &Wire,
+  -1
+);
+
+Adafruit_AHTX0 aht10;
+
+// 0 = AHT10
+// 1 = LED
+// 2 = FAN
+byte screenMode = 0;
+
+byte brightnessPercent = 0;
+byte fanPercent = 0;
+
+bool lastButton = HIGH;
+unsigned long lastPress = 0;
+
+// EEPROM
+#define EEPROM_SCREEN 0
+#define EEPROM_BRIGHTNESS 1
+#define EEPROM_FAN 2
+
+
+// ==================================================
+// SETUP
+// ==================================================
+
+void setup() {
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(LED_PWM_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(FAN_PWM_PIN, OUTPUT);
+
+  digitalWrite(BUZZER_PIN, LOW);
+
+
+  // ==================================================
+  // EEPROM LOAD
+  // ==================================================
+
+  byte savedScreen = EEPROM.read(EEPROM_SCREEN);
+  byte savedBrightness = EEPROM.read(EEPROM_BRIGHTNESS);
+  byte savedFan = EEPROM.read(EEPROM_FAN);
+
+  if (savedScreen <= 2) {
+    screenMode = savedScreen;
+  }
+  else {
+    screenMode = 0;
+  }
+
+  if (savedBrightness == 0 ||
+      savedBrightness == 25 ||
+      savedBrightness == 50 ||
+      savedBrightness == 75 ||
+      savedBrightness == 100) {
+
+    brightnessPercent = savedBrightness;
+  }
+  else {
+    brightnessPercent = 0;
+  }
+
+  if (savedFan == 0 ||
+      savedFan == 25 ||
+      savedFan == 50 ||
+      savedFan == 75 ||
+      savedFan == 100) {
+
+    fanPercent = savedFan;
+  }
+  else {
+    fanPercent = 0;
+  }
+
+
+  // Restore LED brightness
+  setLED();
+
+  // Restore FAN speed
+  setFan();
+
+
+  // ==================================================
+  // OLED START
+  // ==================================================
+
+  if (!display.begin(
+        SSD1306_SWITCHCAPVCC,
+        0x3C
+      )) {
+
+    while (true) {
+    }
+  }
+
+
+  // ==================================================
+  // AHT10 START
+  // ==================================================
+
+  aht10.begin();
+
+
+  // ==================================================
+  // LSTECH LAB SCREEN
+  // ==================================================
+
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+
+  display.setTextSize(2);
+
+  display.setCursor(25, 10);
+  display.println("LStech");
+
+  display.setCursor(40, 33);
+  display.println("Lab");
+
+  display.setTextSize(1);
+
+  display.setCursor(23, 55);
+  display.println("(AI,Robotics)");
+
+  display.display();
+
+  delay(5000);
+
+
+  // ==================================================
+  // CREATED BY SCREEN
+  // ==================================================
+
+  display.clearDisplay();
+
+  display.setTextSize(1);
+
+  display.setCursor(30, 0);
+  display.println("Created By");
+
+  display.setTextSize(2);
+
+  display.setCursor(30, 25);
+  display.println("Anand");
+
+  display.setCursor(42, 48);
+  display.println("Sir");
+
+  display.display();
+
+  delay(5000);
+}
+
+
+// ==================================================
+// LOOP
+// ==================================================
+
+void loop() {
+
+  bool button = digitalRead(BUTTON_PIN);
+
+
+  // ==================================================
+  // BUTTON PRESS
+  // ==================================================
+
+  if (lastButton == HIGH && button == LOW) {
+
+    if (millis() - lastPress > 300) {
+
+      lastPress = millis();
+
+
+      // ==================================================
+      // BEEP
+      // ==================================================
+
+      digitalWrite(BUZZER_PIN, HIGH);
+      delay(80);
+      digitalWrite(BUZZER_PIN, LOW);
+
+
+      // ==================================================
+      // AHT10 SCREEN
+      // ==================================================
+
+      if (screenMode == 0) {
+
+        // AHT10 -> LED
+        screenMode = 1;
+
+        // LED starting at 0%
+        brightnessPercent = 0;
+
+        setLED();
+      }
+
+
+      // ==================================================
+      // LED SCREEN
+      // ==================================================
+
+      else if (screenMode == 1) {
+
+        if (brightnessPercent == 0) {
+
+          brightnessPercent = 25;
+          setLED();
+        }
+
+        else if (brightnessPercent == 25) {
+
+          brightnessPercent = 50;
+          setLED();
+        }
+
+        else if (brightnessPercent == 50) {
+
+          brightnessPercent = 75;
+          setLED();
+        }
+
+        else if (brightnessPercent == 75) {
+
+          brightnessPercent = 100;
+          setLED();
+        }
+
+        else {
+
+          // ==========================================
+          // 100% KE BAAD FAN
+          // ==========================================
+
+          screenMode = 2;
+
+          // FAN OFF se start
+          fanPercent = 0;
+
+          setFan();
+
+          // LED OFF
+          brightnessPercent = 0;
+
+          setLED();
+        }
+      }
+
+
+      // ==================================================
+      // FAN SCREEN
+      // ==================================================
+
+      else {
+
+        if (fanPercent == 0) {
+
+          // FAN ON - 25%
+          fanPercent = 25;
+          setFan();
+        }
+
+        else if (fanPercent == 25) {
+
+          fanPercent = 50;
+          setFan();
+        }
+
+        else if (fanPercent == 50) {
+
+          fanPercent = 75;
+          setFan();
+        }
+
+        else if (fanPercent == 75) {
+
+          fanPercent = 100;
+          setFan();
+        }
+
+        else {
+
+          // ==========================================
+          // 100% KE BAAD AHT10
+          // ==========================================
+
+          screenMode = 0;
+
+          // FAN OFF
+          fanPercent = 0;
+
+          setFan();
+        }
+      }
+
+
+      // ==================================================
+      // EEPROM SAVE
+      // ==================================================
+
+      EEPROM.update(
+        EEPROM_SCREEN,
+        screenMode
+      );
+
+      EEPROM.update(
+        EEPROM_BRIGHTNESS,
+        brightnessPercent
+      );
+
+      EEPROM.update(
+        EEPROM_FAN,
+        fanPercent
+      );
+    }
+  }
+
+
+  lastButton = button;
+
+
+  // ==================================================
+  // DISPLAY
+  // ==================================================
+
+  if (screenMode == 0) {
+
+    showAHT10();
+  }
+
+  else if (screenMode == 1) {
+
+    showLED();
+  }
+
+  else {
+
+    showFan();
+  }
+
+
+  delay(100);
+}
+
+
+// ==================================================
+// LED PWM
+// ==================================================
+
+void setLED() {
+
+  int pwmValue = map(
+    brightnessPercent,
+    0,
+    100,
+    0,
+    255
+  );
+
+  analogWrite(
+    LED_PWM_PIN,
+    pwmValue
+  );
+}
+
+
+// ==================================================
+// FAN PWM
+// ==================================================
+
+void setFan() {
+
+  int pwmValue = map(
+    fanPercent,
+    0,
+    100,
+    0,
+    255
+  );
+
+  analogWrite(
+    FAN_PWM_PIN,
+    pwmValue
+  );
+}
+
+
+// ==================================================
+// AHT10 SCREEN
+// ==================================================
+
+void showAHT10() {
+
+  sensors_event_t humidity;
+  sensors_event_t temperature;
+
+  aht10.getEvent(
+    &humidity,
+    &temperature
+  );
+
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+
+  display.setTextSize(1);
+
+  display.setCursor(30, 0);
+  display.println("LStech Lab");
+
+
+  // TEMPERATURE
+
+  display.setTextSize(2);
+
+  display.setCursor(15, 17);
+
+  display.print(
+    temperature.temperature,
+    1
+  );
+
+  display.println(" C");
+
+
+  // HUMIDITY
+
+  display.setCursor(15, 43);
+
+  display.print(
+    humidity.relative_humidity,
+    1
+  );
+
+  display.println(" %");
+
+  display.display();
+}
+
+
+// ==================================================
+// LED SCREEN
+// ==================================================
+
+void showLED() {
+
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+
+  display.setTextSize(1);
+
+  display.setCursor(30, 0);
+  display.println("LStech Lab");
+
+  display.setTextSize(2);
+
+  display.setCursor(15, 18);
+  display.println("LED Light");
+
+  display.setCursor(38, 43);
+
+  display.print(brightnessPercent);
+  display.println("%");
+
+  display.display();
+}
+
+
+// ==================================================
+// FAN SCREEN
+// ==================================================
+
+void showFan() {
+
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+
+  display.setTextSize(1);
+
+  display.setCursor(30, 0);
+  display.println("LStech Lab");
+
+  display.setTextSize(2);
+
+  display.setCursor(38, 17);
+  display.println("FAN");
+
+  display.setTextSize(1);
+
+  display.setCursor(35, 43);
+
+  if (fanPercent == 0) {
+
+    display.println("OFF");
+  }
+  else {
+
+    display.print("SPEED ");
+    display.print(fanPercent);
+    display.println("%");
+  }
+
+  display.display();
+}
